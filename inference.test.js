@@ -7,15 +7,18 @@
   */
 
 /**
-  * @typedef {ENumber | EString | EUndefined | EVar | EFunc | ECall | ELet} Expression
+  * @typedef {ENumber | EString | EUndefined | ENull | EVar | EFunc | ECall | ELet} Expression
   * @typedef {{nodeType: "Number", value: number}} ENumber
   * @typedef {{nodeType: "String", value: string}} EString
   * @typedef {{nodeType: "Undefined"}} EUndefined
+  * @typedef {{nodeType: "Null"}} ENull
   * @typedef {{nodeType: "Var", name: string}} EVar
-  * @typedef {{nodeType: "Function", params: string[], body: Expression}} EFunc
+  * @typedef {{nodeType: "Function", params: string[], body: (Expression | Return)[]}} EFunc
   * @typedef {{nodeType: "Call", func: Expression, args: Expression[]}} ECall
   * @typedef {{nodeType: "Let", name: string, rhs: Expression}} ELet
   */
+
+/** @typedef {{nodeType: "Return", rhs: Expression}} Return */
 
 /**
   * @typedef {{nodeType: "Forall", quantifiers: string[], type: Type}} Forall
@@ -274,25 +277,45 @@ function infer(ctx, e) {
     case "Number": return [{ nodeType: "Named", name: "Number" }, {}, ctx];
     case "String": return [{ nodeType: "Named", name: "String" }, {}, ctx];
     case "Undefined": return [{ nodeType: "Named", name: "Undefined" }, {}, ctx];
+    case "Null": return [{ nodeType: "Named", name: "Null" }, {}, ctx];
     case "Let": return inferLet(ctx, e);
     case "Var": return inferVar(ctx, e);
     case "Function":
       {
         /** @type {Type[]} */
         let newTypes = [];
-        const newCtx = e.params.reduce((ctx, param) => {
+        let newCtx = e.params.reduce((ctx, param) => {
           const newType = newTVar(ctx);
           newTypes.push(newType);
           return addToContext(ctx, param, newType);
         }, ctx);
 
-        const [bodyType, subst] = infer(newCtx, e.body);
+        /** @type {TUnion} */
+        let returnType = {
+          nodeType: "Union",
+          types: []
+        }
+
+        /** @type {Substitution} */
+        let subst = {};
+
+        e.body.forEach((expr) => {
+          if (expr.nodeType === "Return") {
+            const [exprType, _subst] = infer(newCtx, expr.rhs);
+            subst = composeSubst(subst, _subst);
+            returnType.types.push(exprType);
+          } else {
+            const [_exprType, _subst, resCtx] = infer(newCtx, expr);
+            subst = composeSubst(subst, _subst);
+            newCtx = resCtx;
+          }
+        });
 
         /** @type {Type} */
         const inferredType = {
           nodeType: "Function",
           from: newTypes.map(type => applySubstToType(subst, type)),
-          to: bodyType
+          to: returnType
         };
 
         return [inferredType, subst, ctx];
@@ -595,15 +618,26 @@ function un(...types) {
 
 /**
   * @param {string[]} params
-  * @param {Expression | string} body
+  * @param {(Expression | Return | string)[]} body
   * @returns {Expression}
   */
 function f(params, body) {
   return {
     nodeType: "Function",
     params: params,
-    body: typeof body === "string" ? v(body) : body
+    body: body.map(body => typeof body === "string" ? v(body) : body)
   };
+}
+
+/**
+  * @param {Expression | string} expr
+  * @returns {Return}
+  */
+function ret(expr) {
+  return {
+    nodeType: "Return",
+    rhs: typeof expr === "string" ? v(expr) : expr
+  }
 }
 
 /**
@@ -690,7 +724,7 @@ let [_t2, _2, ctx2] = infer({
   next: 0,
   env: initialEnv
 },
-  eLet("x", i(123))
+  eLet("x", f([], [eLet("y", i(123)), ret(v("y")), ret(u())]))
 );
 
 console.log(typeToString(_t2));
