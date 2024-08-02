@@ -7,13 +7,14 @@
   */
 
 /**
-  * @typedef {ENumber | EString | EUndefined | ENull | EVar | EFunc | ECall | ELet | EAssign} Expression
+  * @typedef {ENumber | EString | EUndefined | ENull | EVar | EFunc | ECall | ELet | EAssign | EBinary} Expression
   * @typedef {{nodeType: "Number", value: number}} ENumber
   * @typedef {{nodeType: "String", value: string}} EString
   * @typedef {{nodeType: "Undefined"}} EUndefined
   * @typedef {{nodeType: "Null"}} ENull
   * @typedef {{nodeType: "Var", name: string}} EVar
   * @typedef {{nodeType: "Function", params: string[], body: (Expression | Return)[]}} EFunc
+  * @typedef {{nodeType: "Binary", operator: string, lhs: Expression, rhs: Expression}} EBinary
   * @typedef {{nodeType: "Call", func: Expression, args: Expression[]}} ECall
   * @typedef {{nodeType: "Let", name: string, rhs: Expression}} ELet
   * @typedef {{nodeType: "Assign", name: string, rhs: Expression}} EAssign
@@ -305,6 +306,40 @@ export function infer(ctx, e) {
     case "String": return [{ nodeType: "Named", name: "String" }, {}, ctx];
     case "Undefined": return [{ nodeType: "Named", name: "Undefined" }, {}, ctx];
     case "Null": return [{ nodeType: "Named", name: "Null" }, {}, ctx];
+    case "Binary": {
+      let [lhsType, s1] = infer(ctx, e.lhs);
+      let ctx1 = applySubstToCtx(s1, ctx);
+      let [rhsType, s2] = infer(ctx1, e.rhs);
+      let ctx2 = applySubstToCtx(s2, ctx1);
+      /** @type {Type} */
+      const numberType = {
+        nodeType: "Named",
+        name: "Number"
+      };
+      if (e.operator === "+") {
+        if (typesEqual(lhsType, numberType) && typesEqual(rhsType, numberType)) {
+          return [
+            {
+              nodeType: "Named",
+              name: "Number"
+            },
+            composeSubst(s2, s1),
+            ctx2
+          ];
+        } else {
+          return [
+            {
+              nodeType: "Named",
+              name: "String"
+            },
+            composeSubst(s2, s1),
+            ctx2
+          ];
+        }
+      } else {
+        throw "TODO"
+      }
+    };
     case "Let": return inferLet(ctx, e);
     case "Assign": return inferAssign(ctx, e);
     case "Var": return inferVar(ctx, e);
@@ -437,7 +472,7 @@ function unify(t1, t2) {
     return composeSubst(s1, s2);
   } else if (t1.nodeType === "Union" && t2.nodeType === "Union") {
     if (t2.types.length > t1.types.length) {
-      throw `Type mismatchlength:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
     }
     if (t2.types.every(t => {
       try {
@@ -450,7 +485,7 @@ function unify(t1, t2) {
     })) {
       return {}
     } else {
-      throw `Type mismatch0:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
     }
   } else if (t1.nodeType === "Union") {
     if (t1.types.some(t => {
@@ -463,7 +498,7 @@ function unify(t1, t2) {
     })) {
       return {}
     } else {
-      throw `Type mismatch1:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
     }
   } else if (t2.nodeType === "Union") {
     if (t2.types.some(t => {
@@ -476,10 +511,10 @@ function unify(t1, t2) {
     })) {
       return {}
     } else {
-      throw `Type mismatch2:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
     }
   } else {
-    throw `Type mismatch3:\n    Expected ${typeToString(t1)}\n    Found ${typeToString(t2)}`;
+    throw `Type mismatch:\n    Expected ${typeToString(t1)}\n    Found ${typeToString(t2)}`;
   }
 }
 
