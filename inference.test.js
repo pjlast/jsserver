@@ -184,7 +184,7 @@ function inferLet(ctx, expr) {
   const ctx1 = applySubstToCtx(s1, ctx);
   const rhsPolytype = generalize(ctx1.env, rhsType);
   const ctx2 = addToContext(ctx1, expr.name, rhsPolytype);
-  return [{ nodeType: "Named", name: "Undefined" }, {}, ctx2];
+  return [{ nodeType: "Named", name: "Undefined" }, s1, ctx2];
 }
 
 /**
@@ -327,13 +327,24 @@ function infer(ctx, e) {
         /** @type {Substitution} */
         let subst = {};
 
+        // TODO: Clean this up and make it understandable
         e.body.forEach((expr) => {
           if (expr.nodeType === "Return") {
             const [exprType, _subst, retCtx] = infer(newCtx, expr.rhs);
             subst = composeSubst(subst, _subst);
             newCtx = retCtx;
             newCtx = applySubstToCtx(subst, newCtx);
-            returnType.types.push(exprType);
+            if (!returnType.types.some(t => typesEqual(t, exprType))) {
+              if (exprType.nodeType === "Union") {
+                exprType.types.forEach(t => returnType.types.forEach(t2 => {
+                  if (!typesEqual(t, t2)) {
+                    returnType.types.push(t);
+                  }
+                }))
+              } else {
+                returnType.types.push(exprType);
+              }
+            }
           } else {
             const [_exprType, _subst, resCtx] = infer(newCtx, expr);
             subst = composeSubst(subst, _subst);
@@ -518,6 +529,36 @@ function contains(t, name) {
     case "Var": return t.name === name;
     case "Union": return t.types.some(type => contains(type, name));
     case "Function": return t.from.some(from => contains(from, name)) || contains(t.to, name);
+  }
+}
+
+/**
+  * @param {Type} t1
+  * @param {Type} t2
+  * @returns {boolean}
+  */
+function typesEqual(t1, t2) {
+  if (t1.nodeType === "Named" && t2.nodeType === "Named") {
+    return t1.name === t2.name;
+  } else if (t1.nodeType === "Var" && t2.nodeType === "Var") {
+    return t1.name === t2.name;
+  } else if (t1.nodeType === "Union" && t2.nodeType === "Union") {
+    if (t1.types.length !== t2.types.length) {
+      return false;
+    }
+    return t1.types.every(type => t2.types.some(type2 => typesEqual(type, type2)));
+  } else if (t1.nodeType === "Function" && t2.nodeType === "Function") {
+    if (t1.from.length !== t2.from.length) {
+      return false;
+    }
+    for (let i = 0; i < t1.from.length; i++) {
+      if (!typesEqual(t1.from[i], t2.from[i])) {
+        return false;
+      }
+    }
+    return typesEqual(t1.to, t2.to);
+  } else {
+    return false;
   }
 }
 
@@ -780,7 +821,10 @@ let [_t2, _2, ctx2] = infer({
   next: 0,
   env: initialEnv
 },
-  eLet("x", f(["a", "b", "c"], [eLet("y", i(123)), eAssign("a", i(456)), c("parseInt", v("b")), ret(v("y")), ret(v("c")), ret(v("a"))]))
+  eLet("x", f(["a", "b", "c"], [             // let x = (a, b, c) => {
+    eLet("y", c("parseInt", v("b"))),        //   let y = parseInt(b);
+    eAssign("a", i(456)),                    //   a = 456;
+    ret(v("c"))]))                           //   return c;}
 );
 
 console.log(typeToString(_t2));
