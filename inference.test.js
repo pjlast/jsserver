@@ -7,7 +7,7 @@
   */
 
 /**
-  * @typedef {ENumber | EString | EUndefined | ENull | EVar | EFunc | ECall | ELet} Expression
+  * @typedef {ENumber | EString | EUndefined | ENull | EVar | EFunc | ECall | ELet | EAssign} Expression
   * @typedef {{nodeType: "Number", value: number}} ENumber
   * @typedef {{nodeType: "String", value: string}} EString
   * @typedef {{nodeType: "Undefined"}} EUndefined
@@ -16,6 +16,7 @@
   * @typedef {{nodeType: "Function", params: string[], body: (Expression | Return)[]}} EFunc
   * @typedef {{nodeType: "Call", func: Expression, args: Expression[]}} ECall
   * @typedef {{nodeType: "Let", name: string, rhs: Expression}} ELet
+  * @typedef {{nodeType: "Assign", name: string, rhs: Expression}} EAssign
   */
 
 /** @typedef {{nodeType: "Return", rhs: Expression}} Return */
@@ -187,6 +188,32 @@ function inferLet(ctx, expr) {
 }
 
 /**
+  * @param {Context} ctx
+  * @param {EAssign} expr
+  * @returns {[Type, Substitution, Context]}
+  */
+function inferAssign(ctx, expr) {
+  const assignedType = ctx.env[expr.name];
+  if (!assignedType) {
+    throw `Unbound var ${expr.name}`;
+  }
+  const [rhsType, s1] = infer(ctx, expr.rhs);
+  const ctx1 = applySubstToCtx(s1, ctx);
+  if (assignedType.nodeType === "Forall") {
+    throw "TODO"
+  } else {
+    try {
+      const subst = unify(assignedType, rhsType);
+      const ctx2 = applySubstToCtx(subst, ctx1);
+      return [assignedType, subst, ctx2];
+    } catch (_e) {
+      console.log(_e);
+      throw _e;
+    }
+  }
+}
+
+/**
   * @param {Substitution} subst - The substitution.
   * @param {Type} type - The type.
   * @returns {Type} The type with the substitution applied.
@@ -279,6 +306,7 @@ function infer(ctx, e) {
     case "Undefined": return [{ nodeType: "Named", name: "Undefined" }, {}, ctx];
     case "Null": return [{ nodeType: "Named", name: "Null" }, {}, ctx];
     case "Let": return inferLet(ctx, e);
+    case "Assign": return inferAssign(ctx, e);
     case "Var": return inferVar(ctx, e);
     case "Function":
       {
@@ -301,21 +329,26 @@ function infer(ctx, e) {
 
         e.body.forEach((expr) => {
           if (expr.nodeType === "Return") {
-            const [exprType, _subst] = infer(newCtx, expr.rhs);
+            const [exprType, _subst, retCtx] = infer(newCtx, expr.rhs);
             subst = composeSubst(subst, _subst);
+            newCtx = retCtx;
+            newCtx = applySubstToCtx(subst, newCtx);
             returnType.types.push(exprType);
           } else {
             const [_exprType, _subst, resCtx] = infer(newCtx, expr);
             subst = composeSubst(subst, _subst);
             newCtx = resCtx;
+            newCtx = applySubstToCtx(subst, newCtx);
           }
         });
+
+        const resType = applySubstToType(subst, returnType);
 
         /** @type {Type} */
         const inferredType = {
           nodeType: "Function",
           from: newTypes.map(type => applySubstToType(subst, type)),
-          to: returnType
+          to: resType
         };
 
         return [inferredType, subst, ctx];
@@ -555,6 +588,22 @@ function eLet(
 }
 
 /**
+  * @param {string} name
+  * @param {string | Expression} _rhs
+  * @returns {Expression}
+  */
+function eAssign(
+  name,
+  _rhs,
+) {
+  const rhs = e(_rhs);
+  return {
+    nodeType: "Assign",
+    name, rhs
+  }
+}
+
+/**
   * @param {Expression | string} expr
   * @returns {Expression}
   */
@@ -716,9 +765,13 @@ let [_t1, _1, ctx1] = infer({
   eLet("x", c("ambig"))
 );
 
+let [_t0, _0, ctx0] = infer(ctx1,
+  eAssign("x", c("ambig"))
+);
+
 console.log(
   typeToString(
-    infer(ctx1,
+    infer(ctx0,
       c("parseInt", s("1"), v("x")),
     )[0]
   ));
@@ -727,7 +780,7 @@ let [_t2, _2, ctx2] = infer({
   next: 0,
   env: initialEnv
 },
-  eLet("x", f(["a", "b", "c"], [eLet("y", i(123)), ret(v("y")), ret(v("c")), ret(v("a"))]))
+  eLet("x", f(["a", "b", "c"], [eLet("y", i(123)), eAssign("a", i(456)), c("parseInt", v("b")), ret(v("y")), ret(v("c")), ret(v("a"))]))
 );
 
 console.log(typeToString(_t2));
