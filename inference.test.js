@@ -1,7 +1,8 @@
 /**
-  * @typedef {TNamed | TVar | TFun} Type
-  * @typedef {{ nodeType: "Named", names: string[] }} TNamed
+  * @typedef {TNamed | TVar | TFun | TUnion} Type
+  * @typedef {{ nodeType: "Named", name: string }} TNamed
   * @typedef {{ nodeType: "Var", name: string }} TVar
+  * @typedef {{ nodeType: "Union", types: Type[] }} TUnion
   * @typedef {{ nodeType: "Function", from: Type[], to: Type }} TFun
   */
 
@@ -69,6 +70,10 @@ function freeTypeVarsInType(t) {
   switch (t.nodeType) {
     case "Named": return {};
     case "Var": return { [t.name]: true };
+    case "Union": return t.types.reduce(
+      (freeVars, type) => union(freeVars, freeTypeVarsInType(type)),
+      {}
+    );
     case "Function":
       return union(
         t.from.reduce(
@@ -175,7 +180,7 @@ function inferLet(ctx, expr) {
   const ctx1 = applySubstToCtx(s1, ctx);
   const rhsPolytype = generalize(ctx1.env, rhsType);
   const ctx2 = addToContext(ctx1, expr.name, rhsPolytype);
-  return [{ nodeType: "Named", names: ["Undefined"] }, {}, ctx2];
+  return [{ nodeType: "Named", name: "Undefined" }, {}, ctx2];
 }
 
 /**
@@ -186,6 +191,7 @@ function inferLet(ctx, expr) {
 function applySubstToType(subst, type) {
   switch (type.nodeType) {
     case "Named": return type;
+    case "Union": return { nodeType: "Union", types: type.types.map(t => applySubstToType(subst, t)) };
     case "Var":
       if (subst[type.name]) {
         return subst[type.name];
@@ -265,9 +271,9 @@ function newTVar(ctx) {
   */
 function infer(ctx, e) {
   switch (e.nodeType) {
-    case "Number": return [{ nodeType: "Named", names: ["Number"] }, {}, ctx];
-    case "String": return [{ nodeType: "Named", names: ["String"] }, {}, ctx];
-    case "Undefined": return [{ nodeType: "Named", names: ["Undefined"] }, {}, ctx];
+    case "Number": return [{ nodeType: "Named", name: "Number" }, {}, ctx];
+    case "String": return [{ nodeType: "Named", name: "String" }, {}, ctx];
+    case "Undefined": return [{ nodeType: "Named", name: "Undefined" }, {}, ctx];
     case "Let": return inferLet(ctx, e);
     case "Var": return inferVar(ctx, e);
     case "Function":
@@ -309,11 +315,11 @@ function infer(ctx, e) {
 
         const newVar = newTVar(ctx1);
         const s3 = composeSubst(s1, s2);
-        const s4 = unify({
+        const s4 = unify(funcType, {
           nodeType: "Function",
           from: argTypes,
           to: newVar
-        }, funcType);
+        });
 
         if (funcType.nodeType === "Function") {
           const funcType1 = applySubstToTFun(s4, funcType);
@@ -323,7 +329,7 @@ function infer(ctx, e) {
             if (argTypes[i]) {
               return unify(type, argTypes[i])
             } else {
-              return unify(type, { nodeType: "Named", names: ["Undefined"] });
+              return unify(type, { nodeType: "Named", name: "Undefined" });
             }
           });
           const s6 = substs.reduce((s, s2) => composeSubst(s, s2), {});
@@ -344,7 +350,7 @@ function infer(ctx, e) {
 function unify(t1, t2) {
   if (t1.nodeType === "Named"
     && t2.nodeType === "Named"
-    && t1.names.some(n => t2.names.includes(n))) {
+    && t1.name === t2.name) {
     return {};
   } else if (t1.nodeType === "Var") {
     return varBind(t1.name, t2);
@@ -362,8 +368,50 @@ function unify(t1, t2) {
       applySubstToType(s1, t2.to)
     );
     return composeSubst(s1, s2);
+  } else if (t1.nodeType === "Union" && t2.nodeType === "Union") {
+    if (t2.types.length > t1.types.length) {
+      throw `Type mismatchlength:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+    }
+    if (t2.types.every(t => {
+      try {
+        unify(t, t1);
+        return true;
+      } catch (_e) {
+        return false;
+      }
+    })) {
+      return {}
+    } else {
+      throw `Type mismatch0:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+    }
+  } else if (t1.nodeType === "Union") {
+    if (t1.types.some(t => {
+      try {
+        unify(t, t2);
+        return true;
+      } catch (_e) {
+        return false;
+      }
+    })) {
+      return {}
+    } else {
+      throw `Type mismatch1:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+    }
+  } else if (t2.nodeType === "Union") {
+    if (t2.types.some(t => {
+      try {
+        unify(t, t1);
+        return true;
+      } catch (_e) {
+        return false;
+      }
+    })) {
+      return {}
+    } else {
+      throw `Type mismatch2:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+    }
   } else {
-    throw `Type mismatch:\n    Expected ${typeToString(t1)}\n    Found ${typeToString(t2)}`;
+    throw `Type mismatch3:\n    Expected ${typeToString(t1)}\n    Found ${typeToString(t2)}`;
   }
 }
 
@@ -409,6 +457,7 @@ function contains(t, name) {
   switch (t.nodeType) {
     case "Named": return false;
     case "Var": return t.name === name;
+    case "Union": return t.types.some(type => contains(type, name));
     case "Function": return t.from.some(from => contains(from, name)) || contains(t.to, name);
   }
 }
@@ -419,8 +468,9 @@ function contains(t, name) {
   */
 function typeToString(type) {
   switch (type.nodeType) {
-    case "Named": return type.names.join(" | ");
+    case "Named": return type.name;
     case "Var": return type.name;
+    case "Union": return type.types.map(typeToString).join(" | ");
     case "Function":
       return `(${type.from.map(typeToString).join(", ")}) => ${typeToString(type.to)}`;
   }
@@ -533,6 +583,17 @@ function s(value) {
 }
 
 /**
+  * @param {Type[]} types
+  * @returns {Type}
+  */
+function un(...types) {
+  return {
+    nodeType: "Union",
+    types: types
+  }
+}
+
+/**
   * @param {string[]} params
   * @param {Expression | string} body
   * @returns {Expression}
@@ -560,13 +621,13 @@ function c(f, ..._args) {
 }
 
 /**
-  * @param {string[]} names
+  * @param {string} name
   * @returns {Type}
   */
-function tn(names) {
+function tn(name) {
   return {
     nodeType: "Named",
-    names: names
+    name: name
   };
 }
 
@@ -595,7 +656,8 @@ function tfunc(types, to) {
 }
 
 const initialEnv = {
-  "parseInt": tfunc([tn(["String"]), tn(["Number", "Undefined"])], tn(["Number"])),
+  "ambig": tfunc([], un(tn("Number"), tn("Undefined"))),
+  "parseInt": tfunc([tn("String"), un(tn("Number"), tn("Undefined"))], tn("Number")),
   "identity": tfunc([tv("x")], tv("x")),
 };
 
@@ -609,18 +671,33 @@ console.log(
     )[0]
   ));
 
-let [_t, _, ctx] = infer({
+
+let [_t1, _1, ctx1] = infer({
+  next: 0,
+  env: initialEnv
+},
+  eLet("x", c("ambig"))
+);
+
+console.log(
+  typeToString(
+    infer(ctx1,
+      c("parseInt", s("1"), v("x")),
+    )[0]
+  ));
+
+let [_t2, _2, ctx2] = infer({
   next: 0,
   env: initialEnv
 },
   eLet("x", i(123))
 );
 
-console.log(typeToString(_t));
+console.log(typeToString(_t2));
 
 console.log(
   typeToString(
-    infer(ctx,
+    infer(ctx2,
       c("identity", v("x")),
     )[0]
   ));
