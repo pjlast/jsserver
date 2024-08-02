@@ -400,6 +400,7 @@ function unify(t1, t2) {
         unify(t, t1);
         return true;
       } catch (_e) {
+        console.log(_e);
         return false;
       }
     })) {
@@ -460,6 +461,8 @@ function composeSubst(s1, s2) {
   */
 function varBind(name, t) {
   if (t.nodeType === "Var" && t.name === name) {
+    return {};
+  } else if (t.nodeType === "Union" && t.types.some(type => contains(type, name))) {
     return {};
   } else if (contains(t, name)) {
     throw `Type ${typeToString(t)} contains a reference to itself`;
@@ -724,7 +727,7 @@ let [_t2, _2, ctx2] = infer({
   next: 0,
   env: initialEnv
 },
-  eLet("x", f([], [eLet("y", i(123)), ret(v("y")), ret(u())]))
+  eLet("x", f(["a", "b", "c"], [eLet("y", i(123)), ret(v("y")), ret(v("c")), ret(v("a"))]))
 );
 
 console.log(typeToString(_t2));
