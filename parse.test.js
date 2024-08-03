@@ -12,6 +12,9 @@ function babelExprToInfExpr(expr) {
   if (expr.type === "StringLiteral") {
     return { nodeType: "String", value: expr.value }
   }
+  if (expr.type === "BlockStatement") {
+    return { nodeType: "Block", body: expr.body.map(babelExprToInfExpr) }
+  }
   if (expr.type === "VariableDeclaration") {
     return { nodeType: "Let", name: expr.declarations[0].id.name, rhs: babelExprToInfExpr(expr.declarations[0].init) }
   }
@@ -19,7 +22,7 @@ function babelExprToInfExpr(expr) {
     return { nodeType: "Call", func: { nodeType: "Var", name: expr.operator }, args: [babelExprToInfExpr(expr.right), babelExprToInfExpr(expr.right)] }
   }
   if (expr.type === "FunctionDeclaration") {
-    return { nodeType: "Let", name: expr.id.name, rhs: { nodeType: "Function", params: expr.params.map(p => p.name), body: expr.body.body.map(babelExprToInfExpr) } }
+    return { nodeType: "Let", name: expr.id.name, rhs: { nodeType: "Function", params: expr.params.map(p => p.name), body: babelExprToInfExpr(expr.body) } }
   }
   if (expr.type === "ReturnStatement") {
     return { nodeType: "Return", rhs: babelExprToInfExpr(expr.argument) }
@@ -225,6 +228,9 @@ function checkCode(code) {
 
 
 let code = `
+function myFunction() {return 1;}
+let x = 123;
+x = myFunction();
 `
 
 checkCode(code)

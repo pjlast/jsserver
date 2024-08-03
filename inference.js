@@ -13,7 +13,7 @@
   * @typedef {{nodeType: "Undefined"}} EUndefined
   * @typedef {{nodeType: "Null"}} ENull
   * @typedef {{nodeType: "Var", name: string}} EVar
-  * @typedef {{nodeType: "Function", params: string[], body: (Expression | Return)[]}} EFunc
+  * @typedef {{nodeType: "Function", params: string[], body: (Expression | Block)}} EFunc
   * @typedef {{nodeType: "Binary", operator: string, lhs: Expression, rhs: Expression}} EBinary
   * @typedef {{nodeType: "Call", func: Expression, args: Expression[]}} ECall
   * @typedef {{nodeType: "Let", name: string, rhs: Expression}} ELet
@@ -21,6 +21,7 @@
   */
 
 /** @typedef {{nodeType: "Return", rhs: Expression}} Return */
+/** @typedef {{nodeType: "Block", body: (Expression | Return | Block)[]}} Block */
 
 /**
   * @typedef {{nodeType: "Forall", quantifiers: string[], type: Type}} Forall
@@ -295,6 +296,38 @@ function newTVar(ctx) {
 }
 
 /**
+  * @param {Context} ctx
+  * @param {Block} block
+  * @returns {[Type | null, Substitution]}
+  */
+function inferBlock(ctx, block) {
+  /** @type {Substitution} */
+  let subst = {};
+  for (const e of block.body) {
+    if (e.nodeType === "Return") {
+      const [exprType, _subst, retCtx] = infer(ctx, e.rhs);
+      subst = composeSubst(subst, _subst);
+      ctx = retCtx;
+      ctx = applySubstToCtx(subst, ctx);
+      return [exprType, subst];
+    } else if (e.nodeType === "Block") {
+      const [retType, isubst] = inferBlock(ctx, e);
+      subst = composeSubst(subst, isubst)
+      ctx = applySubstToCtx(subst, ctx);
+      if (retType) {
+        return [retType, subst];
+      }
+    } else {
+      const [_exprType, _subst, resCtx] = infer(ctx, e);
+      subst = composeSubst(subst, _subst);
+      ctx = resCtx;
+      ctx = applySubstToCtx(subst, ctx);
+    }
+  }
+  return [null, subst];
+}
+
+/**
   * @param {Context} ctx - The environment.
   * @param {Expression} e - Expression to infer.
   * @returns {[Type, Substitution, Context]} The inferred type.
@@ -353,40 +386,27 @@ export function infer(ctx, e) {
           return addToContext(ctx, param, newType);
         }, ctx);
 
-        /** @type {TUnion} */
+        /** @type {Type} */
         let returnType = {
-          nodeType: "Union",
-          types: []
+          nodeType: "Named",
+          name: "Undefined"
         }
 
         /** @type {Substitution} */
         let subst = {};
 
-        // TODO: Clean this up and make it understandable
-        e.body.forEach((expr) => {
-          if (expr.nodeType === "Return") {
-            const [exprType, _subst, retCtx] = infer(newCtx, expr.rhs);
-            subst = composeSubst(subst, _subst);
-            newCtx = retCtx;
-            newCtx = applySubstToCtx(subst, newCtx);
-            if (!returnType.types.some(t => typesEqual(t, exprType))) {
-              if (exprType.nodeType === "Union") {
-                exprType.types.forEach(t => returnType.types.forEach(t2 => {
-                  if (!typesEqual(t, t2)) {
-                    returnType.types.push(t);
-                  }
-                }))
-              } else {
-                returnType.types.push(exprType);
-              }
-            }
-          } else {
-            const [_exprType, _subst, resCtx] = infer(newCtx, expr);
-            subst = composeSubst(subst, _subst);
-            newCtx = resCtx;
-            newCtx = applySubstToCtx(subst, newCtx);
+        if (e.body.nodeType === "Block") {
+          const [retType, isubst] = inferBlock(newCtx, e.body);
+          subst = composeSubst(subst, isubst)
+          if (retType) {
+            returnType = applySubstToType(subst, retType);
           }
-        });
+        } else {
+          const [_exprType, _subst, resCtx] = infer(newCtx, e);
+          subst = composeSubst(subst, _subst);
+          newCtx = resCtx;
+          newCtx = applySubstToCtx(subst, newCtx);
+        }
 
         const resType = applySubstToType(subst, returnType);
 

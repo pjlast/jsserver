@@ -111,15 +111,26 @@ function un(...types) {
 }
 
 /**
+  * @param {(inf.Expression | inf.Return | inf.Block | string)[]} body
+  * @returns {inf.Block}
+  */
+function blk(body) {
+  return {
+    nodeType: "Block",
+    body: body.map(b => typeof b === "string" ? v(b) : b)
+  }
+}
+
+/**
   * @param {string[]} params
-  * @param {(inf.Expression | inf.Return | string)[]} body
+  * @param {(inf.Expression | inf.Block | string)} body
   * @returns {inf.Expression}
   */
 function f(params, body) {
   return {
     nodeType: "Function",
     params: params,
-    body: body.map(body => typeof body === "string" ? v(body) : body)
+    body: typeof body === "string" ? v(body) : body
   };
 }
 
@@ -222,10 +233,10 @@ let [_t2, _2, ctx2] = inf.infer({
   next: 0,
   env: initialEnv
 },
-  eLet("x", f(["a", "b", "c"], [             // let x = (a, b, c) => {
+  eLet("x", f(["a", "b", "c"], blk([             // let x = (a, b, c) => {
     eLet("y", c("parseInt", v("b"))),        //   let y = parseInt(b);
     eAssign("a", i(456)),                    //   a = 456;
-    ret(v("c"))]))                           //   return c;}
+    ret(v("c"))])))                           //   return c;}
 );
 
 console.log(inf.typeToString(_t2));
