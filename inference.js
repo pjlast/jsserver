@@ -21,7 +21,8 @@
   */
 
 /** @typedef {{nodeType: "Return", rhs: Expression}} Return */
-/** @typedef {{nodeType: "Block", body: (Expression | Return | Block)[]}} Block */
+/** @typedef {{nodeType: "Block", body: (Expression | Return | Block | If)[]}} Block */
+/** @typedef {{nodeType: "If", condition: Expression, then: Block, else: Block | null}} If */
 
 /**
   * @typedef {{nodeType: "Forall", quantifiers: string[], type: Type}} Forall
@@ -303,6 +304,10 @@ function newTVar(ctx) {
 function inferBlock(ctx, block) {
   /** @type {Substitution} */
   let subst = {};
+
+  /** @type {TUnion} */
+  let blockTypes = { nodeType: "Union", types: [] };
+
   for (const e of block.body) {
     if (e.nodeType === "Return") {
       const [exprType, _subst, retCtx] = infer(ctx, e.rhs);
@@ -317,6 +322,15 @@ function inferBlock(ctx, block) {
       if (retType) {
         return [retType, subst];
       }
+    } else if (e.nodeType === "If") {
+      const [allBranches, types, substs] = inferIf(ctx, e);
+      subst = composeSubst(subst, substs);
+      if (allBranches) {
+        return [types, subst];
+      }
+      if (types) {
+        blockTypes.types.push(types);
+      }
     } else {
       const [_exprType, _subst, resCtx] = infer(ctx, e);
       subst = composeSubst(subst, _subst);
@@ -324,7 +338,50 @@ function inferBlock(ctx, block) {
       ctx = applySubstToCtx(subst, ctx);
     }
   }
-  return [null, subst];
+  blockTypes.types.push({ nodeType: "Named", name: "Undefined" });
+  console.log(blockTypes);
+  return [blockTypes, subst];
+}
+
+/**
+  * @param {Context} ctx
+  * @param {If} ifs
+  * @returns {[boolean, Type | null, Substitution]}
+  */
+function inferIf(ctx, ifs) {
+  /** @type {Substitution} */
+  let subst = {};
+  const [t, s, c] = infer(ctx, ifs.condition);
+  subst = composeSubst(subst, s);
+  ctx = applySubstToCtx(subst, c)
+  const [thenT, thenS] = inferBlock(ctx, ifs.then)
+  subst = composeSubst(subst, thenS)
+  ctx = applySubstToCtx(subst, ctx)
+  /** @type {TUnion} */
+  let returnType = { nodeType: "Union", types: [] };
+  if (thenT) {
+    returnType.types.push(thenT);
+  }
+  if (ifs.else) {
+    const [elseT, elseS] = inferBlock(ctx, ifs.else)
+    subst = composeSubst(subst, elseS)
+    ctx = applySubstToCtx(subst, ctx)
+    if (elseT) {
+      if (!returnType.types.some(t => typesEqual(t, elseT))) {
+        returnType.types.push(elseT);
+      }
+    }
+    if (returnType.types.length === 1) {
+      return [true, returnType.types[0], subst];
+    }
+    return [true, returnType, subst]
+  }
+
+  if (returnType.types.length === 1) {
+    return [false, returnType.types[0], subst];
+  }
+
+  return [false, returnType, subst];
 }
 
 /**
@@ -496,7 +553,7 @@ function unify(t1, t2) {
     }
     if (t2.types.every(t => {
       try {
-        unify(t, t1);
+        unify(t1, t);
         return true;
       } catch (_e) {
         console.log(_e);
@@ -521,7 +578,7 @@ function unify(t1, t2) {
       throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
     }
   } else if (t2.nodeType === "Union") {
-    if (t2.types.some(t => {
+    if (t2.types.every(t => {
       try {
         unify(t, t1);
         return true;

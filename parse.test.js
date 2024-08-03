@@ -2,7 +2,6 @@ import { parse } from "@babel/parser";
 import { infer } from "./inference.js";
 
 function babelExprToInfExpr(expr) {
-  console.log(expr)
   if (expr.type === "Identifier") {
     return { nodeType: "Var", name: expr.name }
   }
@@ -35,6 +34,10 @@ function babelExprToInfExpr(expr) {
   }
   if (expr.type === "AssignmentExpression") {
     return { nodeType: "Assign", name: expr.left.name, rhs: babelExprToInfExpr(expr.right) }
+  }
+  if (expr.type === "IfStatement") {
+    const else_ = expr.alternate ? babelExprToInfExpr(expr.alternate) : null;
+    return { nodeType: "If", condition: babelExprToInfExpr(expr.test), then: babelExprToInfExpr(expr.consequent), else: else_ }
   }
 }
 
@@ -228,9 +231,15 @@ function checkCode(code) {
 
 
 let code = `
-function myFunction() {return 1;}
-let x = 123;
-x = myFunction();
+function myFunction() {
+  if (1) {
+    return 1;
+  } else {
+    return "String";
+  }
+}
+let x = myFunction();
+x = "123";
 `
 
 checkCode(code)
