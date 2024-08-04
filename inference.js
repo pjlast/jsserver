@@ -350,7 +350,6 @@ function inferBlock(ctx, block) {
     }
   }
   blockTypes.types.push({ nodeType: "Named", name: "Undefined" });
-  console.log(blockTypes);
   return [blockTypes, subst];
 }
 
@@ -543,76 +542,88 @@ export function infer(ctx, e) {
 }
 
 /**
-  * @param {Type} t1
-  * @param {Type} t2
-  * @returns {Substitution}
+  * Check if right can fit left, and if so, return a
+  * substitution that makes them equal. Otherwise,
+  * throw an error.
+  *
+  * @param {Type} left - The restrictive type.
+  * @param {Type} right - The type that must fit left.
+  * @returns {Substitution} The substitution that makes left equal to right.
+  * @throws {string} If the types cannot be unified.
   */
-function unify(t1, t2) {
-  if (t1.nodeType === "Named"
-    && t2.nodeType === "Named"
-    && t1.name === t2.name) {
+export function unify(left, right) {
+  if (left.nodeType === "Named"
+    && right.nodeType === "Named"
+    && left.name === right.name) {
     return {};
-  } else if (t1.nodeType === "Var") {
-    return varBind(t1.name, t2);
-  } else if (t2.nodeType === "Var") {
-    return varBind(t2.name, t1);
-  } else if (t1.nodeType === "Function" && t2.nodeType === "Function") {
-    let t1from = t1.from;
-    if (t1from.length > t2.from.length) {
-      t1from = t1from.slice(0, t2.from.length);
+  } else if (left.nodeType === "Var") {
+    return varBind(left.name, right);
+  } else if (right.nodeType === "Var") {
+    return varBind(right.name, left);
+  } else if (left.nodeType === "Function" && right.nodeType === "Function") {
+    let t1from = left.from;
+    if (t1from.length > right.from.length) {
+      t1from = t1from.slice(0, right.from.length);
     }
-    const substs = t1from.map((from, i) => unify(from, t2.from[i]));
+    const substs = t1from.map((from, i) => unify(from, right.from[i]));
     const s1 = substs.reduce((s, s2) => composeSubst(s, s2), {});
     const s2 = unify(
-      applySubstToType(s1, t1.to),
-      applySubstToType(s1, t2.to)
+      applySubstToType(s1, left.to),
+      applySubstToType(s1, right.to)
     );
     return composeSubst(s1, s2);
-  } else if (t1.nodeType === "Union" && t2.nodeType === "Union") {
-    if (t2.types.length > t1.types.length) {
-      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+  } else if (left.nodeType === "Union" && right.nodeType === "Union") {
+    if (right.types.length > left.types.length) {
+      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
     }
-    if (t2.types.every(t => {
+
+    /** @type {Substitution} */
+    let subst = {};
+    if (right.types.every(t => {
       try {
-        unify(t1, t);
+        subst = composeSubst(subst, unify(left, t));
         return true;
       } catch (_e) {
         console.log(_e);
         return false;
       }
     })) {
-      return {}
+      return subst;
     } else {
-      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
     }
-  } else if (t1.nodeType === "Union") {
-    if (t1.types.some(t => {
+  } else if (left.nodeType === "Union") {
+    /** @type {Substitution} */
+    let subst = {};
+    if (left.types.some(t => {
       try {
-        unify(t, t2);
+        subst = composeSubst(subst, unify(t, right));
         return true;
       } catch (_e) {
         return false;
       }
     })) {
-      return {}
+      return subst;
     } else {
-      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
     }
-  } else if (t2.nodeType === "Union") {
-    if (t2.types.every(t => {
+  } else if (right.nodeType === "Union") {
+    /** @type {Substitution} */
+    let subst = {};
+    if (right.types.every(t => {
       try {
-        unify(t, t1);
+        subst = composeSubst(subst, unify(t, left));
         return true;
       } catch (_e) {
         return false;
       }
     })) {
-      return {}
+      return subst;
     } else {
-      throw `Type mismatch:\n   Expected ${typeToString(t1)}\n   Found ${typeToString(t2)}`;
+      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
     }
   } else {
-    throw `Type mismatch:\n    Expected ${typeToString(t1)}\n    Found ${typeToString(t2)}`;
+    throw Error(`Type mismatch:\n    Expected ${typeToString(left)}\n    Found ${typeToString(right)}`);
   }
 }
 

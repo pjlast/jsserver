@@ -1,4 +1,72 @@
+import { expect, test } from "bun:test";
 import * as inf from "./inference.js";
+import { unify } from "./inference.js";
+
+// Named types must equal
+test("named types", () => {
+  expect(unify(tn("Number"), tn("Number"))).toEqual({});
+  expect(() => unify(tn("Number"), tn("String"))).toThrow();
+})
+
+// When var is compared with named, a subst is returned
+test("var and named", () => {
+  expect(unify(tv("x"), tn("Number"))).toEqual({
+    x: tn("Number")
+  });
+  expect(unify(tn("Number"), tv("x"))).toEqual({
+    x: tn("Number")
+  });
+})
+
+// Two vars are unified
+test("var and var", () => {
+  expect(unify(tv("x"), tv("x"))).toEqual({});
+  expect(unify(tv("x"), tv("y"))).toEqual({
+    x: tv("y")
+  });
+})
+
+// Unions only match when the right side "fits" into
+// the left side. i.e. {number | string} = {number},
+// but {number} != {number | string}, since you cannot
+// assign a possible string to a number.
+test("unions", () => {
+  expect(unify(un(tn("Number"), tn("String")), tn("Number"))).toEqual({});
+  expect(unify(un(tn("Number"), tn("String")), tn("String"))).toEqual({});
+  expect(() => unify(un(tn("Number"), tn("String")), tn("Undefined"))).toThrow();
+  expect(() => unify(un(tn("Number"), tn("String")), tn("Null"))).toThrow();
+
+  expect(() => unify(tn("Number"), un(tn("Number"), tn("String")))).toThrow();
+  expect(() =>
+    unify(tn("String"), un(tn("Number"), tn("String")))
+  ).toThrow();
+  expect(() =>
+    unify(tn("Undefined"), un(tn("Number"), tn("String")))
+  ).toThrow();
+  expect(() =>
+    unify(tn("Null"), un(tn("Number"), tn("String")))
+  ).toThrow();
+
+  expect(unify(un(tn("Number"), tn("String")), un(tn("Number"), tn("String")))).toEqual({});
+
+  // Unions with a var leads to subst
+  expect(unify(un(tn("Number"), tn("String")), un(tn("Number"), tv("x")))).toEqual({
+    x: un(tn("Number"), tn("String"))
+  });
+  expect(unify(un(tn("Number"), tv("x")), un(tn("Number"), tn("String")))).toEqual({
+    x: tn("String")
+  });
+})
+
+test("functions", () => {
+  expect(unify(tfunc([], tn("Number")), tfunc([], tn("Number")))).toEqual({});
+  expect(unify(tfunc([], tv("x")), tfunc([], tn("Number")))).toEqual({
+    x: tn("Number")
+  });
+  expect(unify(tfunc([], tn("Number")), tfunc([], tv("x")))).toEqual({
+    x: tn("Number")
+  });
+})
 
 /**
   * @param {string[]} quantifiers

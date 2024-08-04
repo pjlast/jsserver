@@ -197,9 +197,7 @@ function checkCode(code) {
 
 
 let code = `
-function myFunction(b, a = 10) {
-  throw "Hello";
-}
+function myFunction(b, a = 10) { }
 `
 
 try {
