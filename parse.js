@@ -1,7 +1,54 @@
 import { parse } from "@babel/parser";
 import { infer } from "./inference.js";
-import { babelExprToInfExpr } from "./parse.js";
 
+export function babelExprToInfExpr(expr) {
+  if (expr.type === "Identifier") {
+    return { nodeType: "Var", name: expr.name, loc: expr.loc }
+  }
+  if (expr.type === "NumericLiteral") {
+    return { nodeType: "Number", value: expr.value, loc: expr.loc }
+  }
+  if (expr.type === "StringLiteral") {
+    return { nodeType: "String", value: expr.value, loc: expr.loc }
+  }
+  if (expr.type === "NullLiteral") {
+    return { nodeType: "Null", loc: expr.loc }
+  }
+  if (expr.type === "UndefinedLiteral") {
+    return { nodeType: "Undefined", loc: expr.loc }
+  }
+  if (expr.type === "BlockStatement") {
+    return { nodeType: "Block", body: expr.body.map(babelExprToInfExpr), loc: expr.loc }
+  }
+  if (expr.type === "VariableDeclaration") {
+    return { nodeType: "Let", name: expr.declarations[0].id.name, rhs: babelExprToInfExpr(expr.declarations[0].init), loc: expr.loc }
+  }
+  if (expr.type === "BinaryExpression") {
+    return { nodeType: "Call", func: { nodeType: "Var", name: expr.operator }, args: [babelExprToInfExpr(expr.right), babelExprToInfExpr(expr.right)], loc: expr.loc }
+  }
+  if (expr.type === "FunctionDeclaration") {
+    return { nodeType: "Let", name: expr.id.name, rhs: { nodeType: "Function", params: expr.params.map(p => babelExprToInfExpr(p)), body: babelExprToInfExpr(expr.body) }, loc: expr.loc }
+  }
+  if (expr.type === "ReturnStatement") {
+    return { nodeType: "Return", rhs: babelExprToInfExpr(expr.argument), loc: expr.loc }
+  }
+  if (expr.type === "ExpressionStatement") {
+    return babelExprToInfExpr(expr.expression)
+  }
+  if (expr.type === "CallExpression") {
+    return { nodeType: "Call", func: { nodeType: "Var", name: expr.callee.name }, args: expr.arguments.map(babelExprToInfExpr), loc: expr.loc }
+  }
+  if (expr.type === "AssignmentExpression") {
+    return { nodeType: "Assign", name: expr.left.name, rhs: babelExprToInfExpr(expr.right), loc: expr.loc }
+  }
+  if (expr.type === "AssignmentPattern") {
+    return { nodeType: "Assign", name: expr.left.name, rhs: babelExprToInfExpr(expr.right), loc: expr.loc }
+  }
+  if (expr.type === "IfStatement") {
+    const else_ = expr.alternate ? babelExprToInfExpr(expr.alternate) : null;
+    return { nodeType: "If", condition: babelExprToInfExpr(expr.test), then: babelExprToInfExpr(expr.consequent), else: else_, loc: expr.loc }
+  }
+}
 
 /**
   * @param {string} name
@@ -178,7 +225,7 @@ const initialEnv = {
   "+": tfunc([tn("Number"), tn("Number")], tn("Number")),
 };
 
-function checkCode(code) {
+export function checkCode(code) {
   let res = parse(code)
   let ast = res.program.body
 
@@ -193,18 +240,4 @@ function checkCode(code) {
       throw { msg: e, loc: expr.loc }
     }
   }, startCtx)
-}
-
-
-let code = `
-function myFunction(b, a = 10) {
-  throw "Hello";
-}
-`
-
-try {
-  checkCode(code)
-} catch (e) {
-  console.log(e.msg)
-  console.log(e.loc)
 }

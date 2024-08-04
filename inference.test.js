@@ -25,7 +25,7 @@ function eLet(
   const rhs = e(_rhs);
   return {
     nodeType: "Let",
-    name, rhs
+    name, rhs, loc
   }
 }
 
@@ -41,7 +41,7 @@ function eAssign(
   const rhs = e(_rhs);
   return {
     nodeType: "Assign",
-    name, rhs
+    name, rhs, loc
   }
 }
 
@@ -59,12 +59,12 @@ function e(expr) {
 
 /**
   * @param {string} name
-  * @returns {inf.Expression}
+  * @returns {inf.EVar}
   */
 function v(name) {
   return {
     nodeType: "Var",
-    name: name
+    name: name, loc
   };
 }
 
@@ -75,7 +75,7 @@ function v(name) {
 function i(value) {
   return {
     nodeType: "Number",
-    value: value
+    value: value, loc
   };
 }
 
@@ -84,7 +84,7 @@ function i(value) {
   */
 function u() {
   return {
-    nodeType: "Undefined"
+    nodeType: "Undefined", loc
   };
 }
 
@@ -95,7 +95,7 @@ function u() {
 function s(value) {
   return {
     nodeType: "String",
-    value: value
+    value: value, loc
   };
 }
 
@@ -117,12 +117,12 @@ function un(...types) {
 function blk(body) {
   return {
     nodeType: "Block",
-    body: body.map(b => typeof b === "string" ? v(b) : b)
+    body: body.map(b => typeof b === "string" ? v(b) : b), loc
   }
 }
 
 /**
-  * @param {string[]} params
+  * @param {(inf.EVar | inf.EAssign)[]} params
   * @param {(inf.Expression | inf.Block | string)} body
   * @returns {inf.Expression}
   */
@@ -130,7 +130,7 @@ function f(params, body) {
   return {
     nodeType: "Function",
     params: params,
-    body: typeof body === "string" ? v(body) : body
+    body: typeof body === "string" ? v(body) : body, loc
   };
 }
 
@@ -141,7 +141,20 @@ function f(params, body) {
 function ret(expr) {
   return {
     nodeType: "Return",
-    rhs: typeof expr === "string" ? v(expr) : expr
+    rhs: typeof expr === "string" ? v(expr) : expr, loc
+  }
+}
+
+let loc = {
+  start: {
+    line: 0,
+    column: 0,
+    index: 0
+  },
+  end: {
+    line: 0,
+    column: 0,
+    index: 0
   }
 }
 
@@ -155,7 +168,8 @@ function c(f, ..._args) {
   return {
     nodeType: "Call",
     func: typeof f === "string" ? v(f) : f,
-    args: args
+    args: args,
+    loc
   }
 }
 
@@ -233,7 +247,7 @@ let [_t2, _2, ctx2] = inf.infer({
   next: 0,
   env: initialEnv
 },
-  eLet("x", f(["a", "b", "c"], blk([             // let x = (a, b, c) => {
+  eLet("x", f([v("a"), v("b"), v("c")], blk([             // let x = (a, b, c) => {
     eLet("y", c("parseInt", v("b"))),        //   let y = parseInt(b);
     eAssign("a", i(456)),                    //   a = 456;
     ret(v("c"))])))                           //   return c;}

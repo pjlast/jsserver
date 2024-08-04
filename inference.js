@@ -6,23 +6,26 @@
   * @typedef {{ nodeType: "Function", from: Type[], to: Type }} TFun
   */
 
+/** @typedef {{line: number, column: number}} Position
+  * @typedef {{start: Position, end: Position}} SourceLocation
+
 /**
   * @typedef {ENumber | EString | EUndefined | ENull | EVar | EFunc | ECall | ELet | EAssign | EBinary} Expression
-  * @typedef {{nodeType: "Number", value: number}} ENumber
-  * @typedef {{nodeType: "String", value: string}} EString
-  * @typedef {{nodeType: "Undefined"}} EUndefined
-  * @typedef {{nodeType: "Null"}} ENull
-  * @typedef {{nodeType: "Var", name: string}} EVar
-  * @typedef {{nodeType: "Function", params: string[], body: (Expression | Block)}} EFunc
-  * @typedef {{nodeType: "Binary", operator: string, lhs: Expression, rhs: Expression}} EBinary
-  * @typedef {{nodeType: "Call", func: Expression, args: Expression[]}} ECall
-  * @typedef {{nodeType: "Let", name: string, rhs: Expression}} ELet
-  * @typedef {{nodeType: "Assign", name: string, rhs: Expression}} EAssign
+  * @typedef {{nodeType: "Number", value: number, loc: SourceLocation}} ENumber
+  * @typedef {{nodeType: "String", value: string, loc: SourceLocation}} EString
+  * @typedef {{nodeType: "Undefined", loc: SourceLocation}} EUndefined
+  * @typedef {{nodeType: "Null", loc: SourceLocation}} ENull
+  * @typedef {{nodeType: "Var", name: string, loc: SourceLocation}} EVar
+  * @typedef {{nodeType: "Function", params: (EVar | EAssign)[], body: (Expression | Block), loc: SourceLocation}} EFunc
+  * @typedef {{nodeType: "Binary", operator: string, lhs: Expression, rhs: Expression, loc: SourceLocation}} EBinary
+  * @typedef {{nodeType: "Call", func: Expression, args: Expression[], loc: SourceLocation}} ECall
+  * @typedef {{nodeType: "Let", name: string, rhs: Expression, loc: SourceLocation}} ELet
+  * @typedef {{nodeType: "Assign", name: string, rhs: Expression, loc: SourceLocation}} EAssign
   */
 
-/** @typedef {{nodeType: "Return", rhs: Expression}} Return */
-/** @typedef {{nodeType: "Block", body: (Expression | Return | Block | If)[]}} Block */
-/** @typedef {{nodeType: "If", condition: Expression, then: Block, else: Block | null}} If */
+/** @typedef {{nodeType: "Return", rhs: Expression, loc: SourceLocation}} Return */
+/** @typedef {{nodeType: "Block", body: (Expression | Return | Block | If)[], loc: SourceLocation}} Block */
+/** @typedef {{nodeType: "If", condition: Expression, then: Block, else: Block | null, loc: SourceLocation}} If */
 
 /**
   * @typedef {{nodeType: "Forall", quantifiers: string[], type: Type}} Forall
@@ -210,9 +213,17 @@ function inferAssign(ctx, expr) {
       const ctx2 = applySubstToCtx(subst, ctx1);
       return [assignedType, subst, ctx2];
     } catch (_e) {
-      console.log(_e);
       throw _e;
     }
+  }
+}
+
+class TypeInferenceError extends Error {
+  /** @param {string} message
+    * @param {SourceLocation} loc */
+  constructor(message, loc) {
+    super(message + loc);
+    this.loc = loc;
   }
 }
 
@@ -438,9 +449,19 @@ export function infer(ctx, e) {
         /** @type {Type[]} */
         let newTypes = [];
         let newCtx = e.params.reduce((ctx, param) => {
-          const newType = newTVar(ctx);
-          newTypes.push(newType);
-          return addToContext(ctx, param, newType);
+          switch (param.nodeType) {
+            case "Var":
+              /** @type {TVar} */
+              const newType = {
+                nodeType: "Var",
+                name: param.name,
+              };
+              newTypes.push(newType);
+              return addToContext(ctx, param.name, newType);
+            case "Assign":
+              const [paramType, _subst, _ctx] = infer(ctx, param.rhs);
+              return addToContext(_ctx, param.name, paramType);
+          }
         }, ctx);
 
         /** @type {Type} */
@@ -515,7 +536,7 @@ export function infer(ctx, e) {
           const resultSubst = composeSubst(s5, s6);
           return [applySubstToType(resultSubst, funcType1.to), resultSubst, ctx];
         } else {
-          throw `Type mismatch: expected ${typeToString(funcType)}`;
+          throw `Type mismatch ${e.loc}: expected ${typeToString(funcType)}`;
         }
       }
   }
