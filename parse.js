@@ -2,11 +2,15 @@ import { parse } from "@babel/parser";
 import { infer } from "./inference.js";
 
 export function babelExprToInfExpr(expr) {
+  console.log(expr)
   if (expr.type === "Identifier") {
     return { nodeType: "Var", name: expr.name, loc: expr.loc }
   }
   if (expr.type === "NumericLiteral") {
     return { nodeType: "Number", value: expr.value, loc: expr.loc }
+  }
+  if (expr.type === "BooleanLiteral") {
+    return { nodeType: "Boolean", value: expr.value, loc: expr.loc }
   }
   if (expr.type === "StringLiteral") {
     return { nodeType: "String", value: expr.value, loc: expr.loc }
@@ -24,7 +28,7 @@ export function babelExprToInfExpr(expr) {
     return { nodeType: "Let", name: expr.declarations[0].id.name, rhs: babelExprToInfExpr(expr.declarations[0].init), loc: expr.loc }
   }
   if (expr.type === "BinaryExpression") {
-    return { nodeType: "Call", func: { nodeType: "Var", name: expr.operator }, args: [babelExprToInfExpr(expr.right), babelExprToInfExpr(expr.right)], loc: expr.loc }
+    return { nodeType: "Binary", lhs: babelExprToInfExpr(expr.left), rhs: babelExprToInfExpr(expr.right), operator: expr.operator, loc: expr.loc }
   }
   if (expr.type === "FunctionDeclaration") {
     return { nodeType: "Let", name: expr.id.name, rhs: { nodeType: "Function", params: expr.params.map(p => babelExprToInfExpr(p)), body: babelExprToInfExpr(expr.body) }, loc: expr.loc }
@@ -221,8 +225,7 @@ function tfunc(types, to) {
 }
 
 const initialEnv = {
-  "parseInt": tfunc([tn("String"), un(tn("Number"), tn("Undefined"))], tn("Number")),
-  "+": tfunc([tn("Number"), tn("Number")], tn("Number")),
+  "parseInt": tfunc([tn("string"), un(tn("number"), tn("undefined"))], tn("number")),
 };
 
 export function checkCode(code) {
@@ -237,7 +240,7 @@ export function checkCode(code) {
       let [_1, _2, ctx1] = infer(ctx, expr)
       return ctx1;
     } catch (e) {
-      throw { msg: e, loc: expr.loc }
+      throw e
     }
   }, startCtx)
 }

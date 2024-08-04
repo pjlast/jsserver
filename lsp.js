@@ -42,7 +42,7 @@ documents.onDidOpen(change => {
                             character: e.loc.end.column
                         }
                     },
-                    message: e.msg
+                    message: e.message
                 }]
         })
         }
@@ -75,7 +75,7 @@ documents.onDidChangeContent(change => {
                             character: e.loc.end.column
                         }
                     },
-                    message: e.msg
+                    message: e.message
                 }]
         })
         }

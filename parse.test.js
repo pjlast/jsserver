@@ -174,8 +174,7 @@ function tfunc(types, to) {
 }
 
 const initialEnv = {
-  "parseInt": tfunc([tn("String"), un(tn("Number"), tn("Undefined"))], tn("Number")),
-  "+": tfunc([tn("Number"), tn("Number")], tn("Number")),
+  "parseInt": tfunc([tn("string"), un(tn("number"), tn("undefined"))], tn("number")),
 };
 
 function checkCode(code) {
@@ -190,19 +189,20 @@ function checkCode(code) {
       let [_1, _2, ctx1] = infer(ctx, expr)
       return ctx1;
     } catch (e) {
-      throw { msg: e, loc: expr.loc }
+      throw e
     }
   }, startCtx)
 }
 
 
 let code = `
-function myFunction(b, a = 10) { }
+123 === 123;
 `
 
 try {
   checkCode(code)
 } catch (e) {
-  console.log(e.msg)
+  console.log(e);
+  console.log(e.message)
   console.log(e.loc)
 }

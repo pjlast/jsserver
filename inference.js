@@ -10,9 +10,10 @@
   * @typedef {{start: Position, end: Position}} SourceLocation
 
 /**
-  * @typedef {ENumber | EString | EUndefined | ENull | EVar | EFunc | ECall | ELet | EAssign | EBinary} Expression
+  * @typedef {ENumber | EString | EBool | EUndefined | ENull | EVar | EFunc | ECall | ELet | EAssign | EBinary} Expression
   * @typedef {{nodeType: "Number", value: number, loc: SourceLocation}} ENumber
   * @typedef {{nodeType: "String", value: string, loc: SourceLocation}} EString
+  * @typedef {{nodeType: "Boolean", value: string, loc: SourceLocation}} EBool
   * @typedef {{nodeType: "Undefined", loc: SourceLocation}} EUndefined
   * @typedef {{nodeType: "Null", loc: SourceLocation}} ENull
   * @typedef {{nodeType: "Var", name: string, loc: SourceLocation}} EVar
@@ -193,6 +194,34 @@ function inferLet(ctx, expr) {
   return [{ nodeType: "Named", name: "Undefined" }, s1, ctx2];
 }
 
+class TypeMismatchError {
+  /**
+    * @param {Type} want
+    * @param {Type} got
+    */
+  constructor(want, got) {
+    this.message = "Type mismatch: expected " + typeToString(want) + ", got " + typeToString(got);
+    this.name = "TypeMismatchError";
+    this.want = want;
+    this.got = got;
+  }
+}
+
+
+class TypeInferenceError {
+  /**
+    * @param {TypeMismatchError} typeMismatchErr
+    * @param {SourceLocation} loc
+    */
+  constructor(typeMismatchErr, loc) {
+    this.message = typeMismatchErr.message;
+    this.name = "TypeInferenceError";
+    this.want = typeMismatchErr.want;
+    this.got = typeMismatchErr.got;
+    this.loc = loc;
+  }
+}
+
 /**
   * @param {Context} ctx
   * @param {EAssign} expr
@@ -212,18 +241,13 @@ function inferAssign(ctx, expr) {
       const subst = unify(assignedType, rhsType);
       const ctx2 = applySubstToCtx(subst, ctx1);
       return [assignedType, subst, ctx2];
-    } catch (_e) {
-      throw _e;
+    } catch (e) {
+      if (e instanceof TypeMismatchError) {
+        throw new TypeInferenceError(e, expr.rhs.loc);
+      } else {
+        throw e;
+      }
     }
-  }
-}
-
-class TypeInferenceError extends Error {
-  /** @param {string} message
-    * @param {SourceLocation} loc */
-  constructor(message, loc) {
-    super(message + loc);
-    this.loc = loc;
   }
 }
 
@@ -396,32 +420,33 @@ function inferIf(ctx, ifs) {
 
 /**
   * @param {Context} ctx - The environment.
-  * @param {Expression} e - Expression to infer.
+  * @param {Expression} expr - Expression to infer.
   * @returns {[Type, Substitution, Context]} The inferred type.
   * @throws {string} If the expression cannot be inferred.
   */
-export function infer(ctx, e) {
-  switch (e.nodeType) {
-    case "Number": return [{ nodeType: "Named", name: "Number" }, {}, ctx];
-    case "String": return [{ nodeType: "Named", name: "String" }, {}, ctx];
-    case "Undefined": return [{ nodeType: "Named", name: "Undefined" }, {}, ctx];
-    case "Null": return [{ nodeType: "Named", name: "Null" }, {}, ctx];
+export function infer(ctx, expr) {
+  switch (expr.nodeType) {
+    case "Number": return [{ nodeType: "Named", name: "number" }, {}, ctx];
+    case "String": return [{ nodeType: "Named", name: "string" }, {}, ctx];
+    case "Undefined": return [{ nodeType: "Named", name: "undefined" }, {}, ctx];
+    case "Null": return [{ nodeType: "Named", name: "null" }, {}, ctx];
+    case "Boolean": return [{ nodeType: "Named", name: "boolean" }, {}, ctx];
     case "Binary": {
-      let [lhsType, s1] = infer(ctx, e.lhs);
+      let [lhsType, s1] = infer(ctx, expr.lhs);
       let ctx1 = applySubstToCtx(s1, ctx);
-      let [rhsType, s2] = infer(ctx1, e.rhs);
+      let [rhsType, s2] = infer(ctx1, expr.rhs);
       let ctx2 = applySubstToCtx(s2, ctx1);
       /** @type {Type} */
       const numberType = {
         nodeType: "Named",
         name: "Number"
       };
-      if (e.operator === "+") {
+      if (expr.operator === "+") {
         if (typesEqual(lhsType, numberType) && typesEqual(rhsType, numberType)) {
           return [
             {
               nodeType: "Named",
-              name: "Number"
+              name: "number"
             },
             composeSubst(s2, s1),
             ctx2
@@ -430,24 +455,33 @@ export function infer(ctx, e) {
           return [
             {
               nodeType: "Named",
-              name: "String"
+              name: "string"
             },
             composeSubst(s2, s1),
             ctx2
           ];
         }
+      } else if (expr.operator === "===") {
+        return [
+          {
+            nodeType: "Named",
+            name: "boolean"
+          },
+          composeSubst(s2, s1),
+          ctx2
+        ];
       } else {
         throw "TODO"
       }
     };
-    case "Let": return inferLet(ctx, e);
-    case "Assign": return inferAssign(ctx, e);
-    case "Var": return inferVar(ctx, e);
+    case "Let": return inferLet(ctx, expr);
+    case "Assign": return inferAssign(ctx, expr);
+    case "Var": return inferVar(ctx, expr);
     case "Function":
       {
         /** @type {Type[]} */
         let newTypes = [];
-        let newCtx = e.params.reduce((ctx, param) => {
+        let newCtx = expr.params.reduce((ctx, param) => {
           switch (param.nodeType) {
             case "Var":
               /** @type {TVar} */
@@ -466,20 +500,20 @@ export function infer(ctx, e) {
         /** @type {Type} */
         let returnType = {
           nodeType: "Named",
-          name: "Undefined"
+          name: "undefined"
         }
 
         /** @type {Substitution} */
         let subst = {};
 
-        if (e.body.nodeType === "Block") {
-          const [retType, isubst] = inferBlock(newCtx, e.body);
+        if (expr.body.nodeType === "Block") {
+          const [retType, isubst] = inferBlock(newCtx, expr.body);
           subst = composeSubst(subst, isubst)
           if (retType) {
             returnType = applySubstToType(subst, retType);
           }
         } else {
-          const [_exprType, _subst, resCtx] = infer(newCtx, e);
+          const [_exprType, _subst, resCtx] = infer(newCtx, expr);
           subst = composeSubst(subst, _subst);
           newCtx = resCtx;
           newCtx = applySubstToCtx(subst, newCtx);
@@ -497,15 +531,14 @@ export function infer(ctx, e) {
         return [inferredType, subst, ctx];
       }
     case "Call":
-      {
-        const [funcType, s1] = infer(ctx, e.func);
+      try {
+        const [funcType, s1] = infer(ctx, expr.func);
         const ctx1 = applySubstToCtx(s1, ctx);
         /** @type {Type[]} */
         let argTypes = []
         /** @type {Substitution[]} */
         let substs = []
-        e.args.forEach((arg) => {
-
+        expr.args.forEach((arg) => {
           const [argType, subst] = infer(ctx1, arg);
           argTypes.push(argType);
           substs.push(subst);
@@ -528,14 +561,20 @@ export function infer(ctx, e) {
             if (argTypes[i]) {
               return unify(type, argTypes[i])
             } else {
-              return unify(type, { nodeType: "Named", name: "Undefined" });
+              return unify(type, { nodeType: "Named", name: "undefined" });
             }
           });
           const s6 = substs.reduce((s, s2) => composeSubst(s, s2), {});
           const resultSubst = composeSubst(s5, s6);
           return [applySubstToType(resultSubst, funcType1.to), resultSubst, ctx];
         } else {
-          throw `Type mismatch ${e.loc}: expected ${typeToString(funcType)}`;
+          throw new TypeInferenceError(new TypeMismatchError(funcType, { nodeType: "Named", name: "function" }), expr.loc);
+        }
+      } catch (e) {
+        if (e instanceof TypeMismatchError) {
+          throw new TypeInferenceError(e, expr.loc);
+        } else {
+          throw e
         }
       }
   }
@@ -549,7 +588,7 @@ export function infer(ctx, e) {
   * @param {Type} left - The restrictive type.
   * @param {Type} right - The type that must fit left.
   * @returns {Substitution} The substitution that makes left equal to right.
-  * @throws {string} If the types cannot be unified.
+  * @throws {TypeMismatchError} If the types cannot be unified.
   */
 export function unify(left, right) {
   if (left.nodeType === "Named"
@@ -574,7 +613,7 @@ export function unify(left, right) {
     return composeSubst(s1, s2);
   } else if (left.nodeType === "Union" && right.nodeType === "Union") {
     if (right.types.length > left.types.length) {
-      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
+      throw new TypeMismatchError(left, right);
     }
 
     /** @type {Substitution} */
@@ -590,7 +629,7 @@ export function unify(left, right) {
     })) {
       return subst;
     } else {
-      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
+      throw new TypeMismatchError(left, right);
     }
   } else if (left.nodeType === "Union") {
     /** @type {Substitution} */
@@ -605,7 +644,7 @@ export function unify(left, right) {
     })) {
       return subst;
     } else {
-      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
+      throw new TypeMismatchError(left, right);
     }
   } else if (right.nodeType === "Union") {
     /** @type {Substitution} */
@@ -620,10 +659,10 @@ export function unify(left, right) {
     })) {
       return subst;
     } else {
-      throw `Type mismatch:\n   Expected ${typeToString(left)}\n   Found ${typeToString(right)}`;
+      throw new TypeMismatchError(left, right);
     }
   } else {
-    throw Error(`Type mismatch:\n    Expected ${typeToString(left)}\n    Found ${typeToString(right)}`);
+    throw new TypeMismatchError(left, right);
   }
 }
 
