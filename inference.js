@@ -3,7 +3,7 @@
  * @typedef {{ nodeType: "Named", name: string }} TNamed
  * @typedef {{ nodeType: "Var", name: string }} TVar
  * @typedef {{ nodeType: "Union", types: Type[] }} TUnion
- * @typedef {{ nodeType: "Function", from: Type[], to: Type }} TFun
+ * @typedef {{ nodeType: "Function", from: Type[], to: Type, throws: (Type | null) }} TFun
  */
 
 /** @typedef {{line: number, column: number}} Position
@@ -25,7 +25,8 @@
   */
 
 /** @typedef {{nodeType: "Return", rhs: Expression, loc: SourceLocation}} Return */
-/** @typedef {{nodeType: "Block", body: (Expression | Return | Block | If)[], loc: SourceLocation}} Block */
+/** @typedef {{nodeType: "Throw", rhs: Expression, loc: SourceLocation}} Throw */
+/** @typedef {{nodeType: "Block", body: (Expression | Return | Block | If | Throw)[], loc: SourceLocation}} Block */
 /** @typedef {{nodeType: "If", condition: Expression, then: Block, else: Block | null, loc: SourceLocation}} If */
 
 /**
@@ -281,6 +282,7 @@ function applySubstToType(subst, type) {
         nodeType: "Function",
         from: type.from.map((from) => applySubstToType(subst, from)),
         to: applySubstToType(subst, type.to),
+        throws: null,
       };
   }
 }
@@ -311,6 +313,7 @@ function applySubstToTFun(subst, type) {
     nodeType: "Function",
     from: type.from.map((from) => applySubstToType(subst, from)),
     to: applySubstToType(subst, type.to),
+    throws: null,
   };
 }
 
@@ -360,6 +363,8 @@ function inferBlock(ctx, block) {
       ctx = retCtx;
       ctx = applySubstToCtx(subst, ctx);
       return [exprType, subst];
+    } else if (e.nodeType === "Throw") {
+      console.log("TODO");
     } else if (e.nodeType === "Block") {
       const [retType, isubst] = inferBlock(ctx, e);
       subst = composeSubst(subst, isubst);
@@ -548,6 +553,7 @@ export function infer(ctx, expr) {
         nodeType: "Function",
         from: newTypes.map((type) => applySubstToType(subst, type)),
         to: resType,
+        throws: null,
       };
 
       return [inferredType, subst, ctx];
@@ -573,6 +579,7 @@ export function infer(ctx, expr) {
           nodeType: "Function",
           from: argTypes,
           to: newVar,
+          throws: null,
         });
 
         if (funcType.nodeType === "Function") {

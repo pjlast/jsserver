@@ -2,7 +2,6 @@ import { parse } from "@babel/parser";
 import { infer } from "./inference.js";
 
 export function babelExprToInfExpr(expr) {
-  console.log(expr);
   if (expr.type === "Identifier") {
     return { nodeType: "Var", name: expr.name, loc: expr.loc };
   }
