@@ -101,15 +101,15 @@ function eLet(name, _rhs) {
 }
 
 /**
- * @param {string} name
+ * @param {{name: string, loc: inf.SourceLocation}} lhs
  * @param {string | inf.Expression} _rhs
  * @returns {inf.Expression}
  */
-function eAssign(name, _rhs) {
+function eAssign(lhs, _rhs) {
   const rhs = e(_rhs);
   return {
     nodeType: "Assign",
-    name,
+    lhs,
     rhs,
     loc,
   };
@@ -282,6 +282,7 @@ function tfunc(types, to) {
     nodeType: "Function",
     from: types,
     to: to,
+    throws: null,
   };
 }
 
@@ -314,7 +315,7 @@ let [_t1, _1, ctx1] = inf.infer(
   eLet("x", c("ambig")),
 );
 
-let [_t0, _0, ctx0] = inf.infer(ctx1, eAssign("x", c("ambig")));
+let [_t0, _0, ctx0] = inf.infer(ctx1, eAssign({name: "x", loc}, c("ambig")));
 
 console.log(
   inf.typeToString(inf.infer(ctx0, c("parseInt", s("1"), v("x")))[0]),
@@ -332,7 +333,7 @@ let [_t2, _2, ctx2] = inf.infer(
       blk([
         // let x = (a, b, c) => {
         eLet("y", c("parseInt", v("b"))), //   let y = parseInt(b);
-        eAssign("a", i(456)), //   a = 456;
+        eAssign({name: "a", loc}, i(456)), //   a = 456;
         ret(v("c")),
       ]),
     ),
