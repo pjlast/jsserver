@@ -193,7 +193,7 @@ function inferLet(ctx, expr) {
   const ctx1 = applySubstToCtx(s1, ctx);
   const rhsPolytype = generalize(ctx1.env, rhsType);
   const ctx2 = addToContext(ctx1, expr.name, rhsPolytype);
-  return [{ nodeType: "Named", name: "Undefined" }, s1, ctx2];
+  return [{ nodeType: "Named", name: "undefined" }, s1, ctx2];
 }
 
 export class TypeMismatchError extends Error {
@@ -204,9 +204,9 @@ export class TypeMismatchError extends Error {
   constructor(want, got) {
     super(
       "Type mismatch: expected " +
-        typeToString(want) +
-        ", got " +
-        typeToString(got),
+      typeToString(want) +
+      ", got " +
+      typeToString(got),
     );
     this.name = "TypeMismatchError";
     this.want = want;
@@ -282,7 +282,7 @@ function applySubstToType(subst, type) {
         nodeType: "Function",
         from: type.from.map((from) => applySubstToType(subst, from)),
         to: applySubstToType(subst, type.to),
-        throws: null,
+        throws: type.throws ? applySubstToType(subst, type.throws) : null
       };
   }
 }
@@ -313,7 +313,7 @@ function applySubstToTFun(subst, type) {
     nodeType: "Function",
     from: type.from.map((from) => applySubstToType(subst, from)),
     to: applySubstToType(subst, type.to),
-    throws: null,
+    throws: type.throws ? applySubstToType(subst, type.throws) : null
   };
 }
 
@@ -347,7 +347,7 @@ function newTVar(ctx) {
 /**
  * @param {Context} ctx
  * @param {Block} block
- * @returns {[Type | null, Substitution]}
+ * @returns {[Type | null, Type | null, Substitution]}
  */
 function inferBlock(ctx, block) {
   /** @type {Substitution} */
@@ -356,30 +356,40 @@ function inferBlock(ctx, block) {
   /** @type {TUnion} */
   let blockTypes = { nodeType: "Union", types: [] };
 
+  /** @type {TUnion} */
+  let throwTypes = { nodeType: "Union", types: [] };
+
   for (const e of block.body) {
     if (e.nodeType === "Return") {
       const [exprType, _subst, retCtx] = infer(ctx, e.rhs);
       subst = composeSubst(subst, _subst);
       ctx = retCtx;
       ctx = applySubstToCtx(subst, ctx);
-      return [exprType, subst];
+      return [exprType, null, subst];
     } else if (e.nodeType === "Throw") {
-      console.log("TODO");
+      const [throwType, _subst, throwCtx] = infer(ctx, e.rhs);
+      subst = composeSubst(subst, _subst);
+      ctx = throwCtx;
+      ctx = applySubstToCtx(subst, ctx);
+      return [null, throwType, subst];
     } else if (e.nodeType === "Block") {
-      const [retType, isubst] = inferBlock(ctx, e);
+      const [retType, _throws, isubst] = inferBlock(ctx, e);
       subst = composeSubst(subst, isubst);
       ctx = applySubstToCtx(subst, ctx);
       if (retType) {
-        return [retType, subst];
+        return [retType, null, subst];
       }
     } else if (e.nodeType === "If") {
-      const [allBranches, types, substs] = inferIf(ctx, e);
+      const [allBranches, retTypes, tTypes, substs] = inferIf(ctx, e);
       subst = composeSubst(subst, substs);
       if (allBranches) {
-        return [types, subst];
+        return [retTypes, tTypes, subst];
       }
-      if (types) {
-        blockTypes.types.push(types);
+      if (retTypes) {
+        blockTypes.types.push(retTypes);
+      }
+      if (tTypes) {
+        throwTypes.types.push(tTypes);
       }
     } else {
       const [_exprType, _subst, resCtx] = infer(ctx, e);
@@ -388,14 +398,14 @@ function inferBlock(ctx, block) {
       ctx = applySubstToCtx(subst, ctx);
     }
   }
-  blockTypes.types.push({ nodeType: "Named", name: "Undefined" });
-  return [blockTypes, subst];
+  blockTypes.types.push({ nodeType: "Named", name: "undefined" });
+  return [blockTypes, throwTypes, subst];
 }
 
 /**
  * @param {Context} ctx
  * @param {If} ifs
- * @returns {[boolean, Type | null, Substitution]}
+ * @returns {[boolean, Type | null, Type | null, Substitution]}
  */
 function inferIf(ctx, ifs) {
   /** @type {Substitution} */
@@ -403,16 +413,21 @@ function inferIf(ctx, ifs) {
   const [_t, s, c] = infer(ctx, ifs.condition);
   subst = composeSubst(subst, s);
   ctx = applySubstToCtx(subst, c);
-  const [thenT, thenS] = inferBlock(ctx, ifs.then);
+  const [thenT, throws, thenS] = inferBlock(ctx, ifs.then);
   subst = composeSubst(subst, thenS);
   ctx = applySubstToCtx(subst, ctx);
   /** @type {TUnion} */
   let returnType = { nodeType: "Union", types: [] };
+  /** @type {TUnion} */
+  let throwType = { nodeType: "Union", types: [] };
   if (thenT) {
     returnType.types.push(thenT);
   }
+  if (throws) {
+    throwType.types.push(throws);
+  }
   if (ifs.else) {
-    const [elseT, elseS] = inferBlock(ctx, ifs.else);
+    const [elseT, throws, elseS] = inferBlock(ctx, ifs.else);
     subst = composeSubst(subst, elseS);
     ctx = applySubstToCtx(subst, ctx);
     if (elseT) {
@@ -420,17 +435,36 @@ function inferIf(ctx, ifs) {
         returnType.types.push(elseT);
       }
     }
-    if (returnType.types.length === 1) {
-      return [true, returnType.types[0], subst];
+    if (throws) {
+      if (!throwType.types.some((t) => typesEqual(t, throws))) {
+        throwType.types.push(throws);
+      }
     }
-    return [true, returnType, subst];
+    /** @type {Type} */
+    let retType = returnType;
+    if (returnType.types.length === 1) {
+      retType = returnType.types[0];
+    }
+    /** @type {Type} */
+    let tType = throwType;
+    if (throwType.types.length === 1) {
+      tType = throwType.types[0];
+    }
+    return [true, retType, tType, subst];
   }
 
+  /** @type {Type} */
+  let retType = returnType;
   if (returnType.types.length === 1) {
-    return [false, returnType.types[0], subst];
+    retType = returnType.types[0];
+  }
+  /** @type {Type} */
+  let tType = throwType;
+  if (throwType.types.length === 1) {
+    tType = throwType.types[0];
   }
 
-  return [false, returnType, subst];
+  return [false, retType, throwType, subst];
 }
 
 /**
@@ -530,14 +564,20 @@ export function infer(ctx, expr) {
         name: "undefined",
       };
 
+      /** @type {Type | null} */
+      let throwType = null;
+
       /** @type {Substitution} */
       let subst = {};
 
       if (expr.body.nodeType === "Block") {
-        const [retType, isubst] = inferBlock(newCtx, expr.body);
+        const [retType, throws, isubst] = inferBlock(newCtx, expr.body);
         subst = composeSubst(subst, isubst);
         if (retType) {
           returnType = applySubstToType(subst, retType);
+        }
+        if (throws) {
+          throwType = applySubstToType(subst, throws);
         }
       } else {
         const [_exprType, _subst, resCtx] = infer(newCtx, expr);
@@ -553,7 +593,7 @@ export function infer(ctx, expr) {
         nodeType: "Function",
         from: newTypes.map((type) => applySubstToType(subst, type)),
         to: resType,
-        throws: null,
+        throws: throwType,
       };
 
       return [inferredType, subst, ctx];
@@ -574,12 +614,13 @@ export function infer(ctx, expr) {
         const s2 = substs.reduce(composeSubst, {});
 
         const newVar = newTVar(ctx1);
+        const newThrowVar = newTVar(ctx1);
         const s3 = composeSubst(s1, s2);
         const s4 = unify(funcType, {
           nodeType: "Function",
           from: argTypes,
           to: newVar,
-          throws: null,
+          throws: newThrowVar,
         });
 
         if (funcType.nodeType === "Function") {
@@ -653,7 +694,16 @@ export function unify(left, right) {
       applySubstToType(s1, left.to),
       applySubstToType(s1, right.to),
     );
-    return composeSubst(s1, s2);
+    if (left.throws && right.throws) {
+      const s3 = unify(
+        applySubstToType(s1, left.throws),
+        applySubstToType(s1, right.throws),
+      )
+
+      return composeSubst(s1, composeSubst(s2, s3));
+    } else {
+      return composeSubst(s1, s2);
+    }
   } else if (left.nodeType === "Union" && right.nodeType === "Union") {
     if (right.types.length > left.types.length) {
       throw new TypeMismatchError(left, right);
@@ -817,8 +867,13 @@ export function typeToString(type) {
       return type.name;
     case "Union":
       return type.types.map(typeToString).join(" | ");
-    case "Function":
-      return `(${type.from.map(typeToString).join(", ")}) => ${typeToString(type.to)}`;
+    case "Function": {
+      let s = `(${type.from.map(typeToString).join(", ")}) => ${typeToString(type.to)}`;
+      if (type.throws) {
+        s += ` throws ${typeToString(type.throws)}`;
+      }
+      return s;
+    }
   }
 }
 

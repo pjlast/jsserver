@@ -189,7 +189,9 @@ function checkCode(code) {
 }
 
 let code = `
-123 === 123;
+function myFunction() {
+  throw "string";
+}
 `;
 
 try {
