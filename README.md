@@ -9,13 +9,20 @@ To install dependencies:
 bun install
 ```
 
-To run:
+To use the LSP in Neovim:
 
-```bash
-bun run index.js
+```lua
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
+  pattern = { "*.js" },
+  callback = function()
+    vim.lsp.start {
+      name = "jsserver",
+      cmd = { "bun", "/path/to/jsserver/lsp.js", "--stdio" },
+      root_dir = vim.fs.dirname(vim.fs.find({ '.git' }, { upward = true })[1]),
+    }
+  end,
+})
 ```
-
-This project was created using `bun init` in bun v1.1.21. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
 
 ## Resources
 
