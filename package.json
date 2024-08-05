@@ -3,9 +3,19 @@
   "module": "index.js",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@eslint/js": "^9.8.0",
+    "@types/bun": "latest",
+    "eslint": "9.x",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.9.0",
+    "prettier": "3.3.3"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.25.3",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
   }
 }
