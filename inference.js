@@ -21,7 +21,7 @@
   * @typedef {{nodeType: "Binary", operator: string, lhs: Expression, rhs: Expression, loc: SourceLocation}} EBinary
   * @typedef {{nodeType: "Call", func: Expression, args: Expression[], loc: SourceLocation}} ECall
   * @typedef {{nodeType: "Let", name: string, rhs: Expression, loc: SourceLocation}} ELet
-  * @typedef {{nodeType: "Assign", name: string, rhs: Expression, loc: SourceLocation}} EAssign
+  * @typedef {{nodeType: "Assign", lhs: {name: string, loc: SourceLocation}, rhs: Expression, loc: SourceLocation}} EAssign
   */
 
 /** @typedef {{nodeType: "Return", rhs: Expression, loc: SourceLocation}} Return */
@@ -233,9 +233,9 @@ export class TypeInferenceError extends Error {
  * @returns {[Type, Substitution, Context]}
  */
 function inferAssign(ctx, expr) {
-  const assignedType = ctx.env[expr.name];
+  const assignedType = ctx.env[expr.lhs.name];
   if (!assignedType) {
-    throw `Unbound var ${expr.name}`;
+    throw `Unbound var ${expr.lhs.name}`;
   }
   const [rhsType, s1] = infer(ctx, expr.rhs);
   const ctx1 = applySubstToCtx(s1, ctx);
@@ -248,7 +248,7 @@ function inferAssign(ctx, expr) {
       return [assignedType, subst, ctx2];
     } catch (e) {
       if (e instanceof TypeMismatchError) {
-        throw new TypeInferenceError(e, expr.rhs.loc);
+        throw new TypeInferenceError(e, expr.lhs.loc);
       } else {
         throw e;
       }
@@ -514,7 +514,7 @@ export function infer(ctx, expr) {
           }
           case "Assign": {
             const [paramType, _subst, _ctx] = infer(ctx, param.rhs);
-            return addToContext(_ctx, param.name, paramType);
+            return addToContext(_ctx, param.lhs.name, paramType);
           }
         }
       }, ctx);

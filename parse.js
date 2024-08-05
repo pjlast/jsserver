@@ -78,7 +78,10 @@ export function babelExprToInfExpr(expr) {
   if (expr.type === "AssignmentExpression") {
     return {
       nodeType: "Assign",
-      name: expr.left.name,
+      lhs: {
+        name: expr.left.name,
+        loc: expr.left.loc,
+      },
       rhs: babelExprToInfExpr(expr.right),
       loc: expr.loc,
     };
@@ -86,7 +89,10 @@ export function babelExprToInfExpr(expr) {
   if (expr.type === "AssignmentPattern") {
     return {
       nodeType: "Assign",
-      name: expr.left.name,
+      lhs: {
+        name: expr.left.name,
+        loc: expr.left.loc,
+      },
       rhs: babelExprToInfExpr(expr.right),
       loc: expr.loc,
     };
