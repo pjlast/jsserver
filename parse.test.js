@@ -2,43 +2,38 @@ import { parse } from "@babel/parser";
 import { infer } from "./inference.js";
 import { babelExprToInfExpr } from "./parse.js";
 
-
 /**
-  * @param {string} name
-  * @param {string | inf.Expression} _rhs
-  * @returns {inf.Expression}
-  */
-function eLet(
-  name,
-  _rhs,
-) {
+ * @param {string} name
+ * @param {string | inf.Expression} _rhs
+ * @returns {inf.Expression}
+ */
+function eLet(name, _rhs) {
   const rhs = e(_rhs);
   return {
     nodeType: "Let",
-    name, rhs
-  }
+    name,
+    rhs,
+  };
 }
 
 /**
-  * @param {string} name
-  * @param {string | inf.Expression} _rhs
-  * @returns {inf.Expression}
-  */
-function eAssign(
-  name,
-  _rhs,
-) {
+ * @param {string} name
+ * @param {string | inf.Expression} _rhs
+ * @returns {inf.Expression}
+ */
+function eAssign(name, _rhs) {
   const rhs = e(_rhs);
   return {
     nodeType: "Assign",
-    name, rhs
-  }
+    name,
+    rhs,
+  };
 }
 
 /**
-  * @param {inf.Expression | string} expr
-  * @returns {inf.Expression}
-  */
+ * @param {inf.Expression | string} expr
+ * @returns {inf.Expression}
+ */
 function e(expr) {
   if (typeof expr === "string") {
     return v(expr);
@@ -48,161 +43,159 @@ function e(expr) {
 }
 
 /**
-  * @param {string} name
-  * @returns {inf.Expression}
-  */
+ * @param {string} name
+ * @returns {inf.Expression}
+ */
 function v(name) {
   return {
     nodeType: "Var",
-    name: name
+    name: name,
   };
 }
 
 /**
-  * @param {number} value
-  * @returns {inf.Expression}
-  */
+ * @param {number} value
+ * @returns {inf.Expression}
+ */
 function i(value) {
   return {
     nodeType: "Number",
-    value: value
+    value: value,
   };
 }
 
 /**
-  * @returns {inf.Expression}
-  */
+ * @returns {inf.Expression}
+ */
 function u() {
   return {
-    nodeType: "Undefined"
+    nodeType: "Undefined",
   };
 }
 
 /**
-  * @param {string} value
-  * @returns {inf.Expression}
-  */
+ * @param {string} value
+ * @returns {inf.Expression}
+ */
 function s(value) {
   return {
     nodeType: "String",
-    value: value
+    value: value,
   };
 }
 
 /**
-  * @param {inf.Type[]} types
-  * @returns {inf.Type}
-  */
+ * @param {inf.Type[]} types
+ * @returns {inf.Type}
+ */
 function un(...types) {
   return {
     nodeType: "Union",
-    types: types
-  }
+    types: types,
+  };
 }
 
 /**
-  * @param {string[]} params
-  * @param {(inf.Expression | inf.Return | string)[]} body
-  * @returns {inf.Expression}
-  */
+ * @param {string[]} params
+ * @param {(inf.Expression | inf.Return | string)[]} body
+ * @returns {inf.Expression}
+ */
 function f(params, body) {
   return {
     nodeType: "Function",
     params: params,
-    body: body.map(body => typeof body === "string" ? v(body) : body)
+    body: body.map((body) => (typeof body === "string" ? v(body) : body)),
   };
 }
 
 /**
-  * @param {inf.Expression | string} expr
-  * @returns {inf.Return}
-  */
+ * @param {inf.Expression | string} expr
+ * @returns {inf.Return}
+ */
 function ret(expr) {
   return {
     nodeType: "Return",
-    rhs: typeof expr === "string" ? v(expr) : expr
-  }
+    rhs: typeof expr === "string" ? v(expr) : expr,
+  };
 }
 
 /**
-  * @param {inf.Expression | string} f
-  * @param {(inf.Expression | string)[]} _args
-  * @returns {inf.Expression}
-  */
+ * @param {inf.Expression | string} f
+ * @param {(inf.Expression | string)[]} _args
+ * @returns {inf.Expression}
+ */
 function c(f, ..._args) {
-  const args = _args.map(a => typeof a === "string" ? v(a) : a);
+  const args = _args.map((a) => (typeof a === "string" ? v(a) : a));
   return {
     nodeType: "Call",
     func: typeof f === "string" ? v(f) : f,
-    args: args
-  }
+    args: args,
+  };
 }
 
 /**
-  * @param {string} name
-  * @returns {inf.Type}
-  */
+ * @param {string} name
+ * @returns {inf.Type}
+ */
 function tn(name) {
   return {
     nodeType: "Named",
-    name: name
+    name: name,
   };
 }
 
 /**
-  * @param {string} name
-  * @returns {inf.Type}
-  */
+ * @param {string} name
+ * @returns {inf.Type}
+ */
 function tv(name) {
   return {
     nodeType: "Var",
-    name: name
+    name: name,
   };
 }
 
 /**
-  * @param {inf.Type[]} types
-  * @param {inf.Type} to
-  * @returns {inf.Type}
-  */
+ * @param {inf.Type[]} types
+ * @param {inf.Type} to
+ * @returns {inf.Type}
+ */
 function tfunc(types, to) {
   return {
     nodeType: "Function",
     from: types,
-    to: to
+    to: to,
   };
 }
 
 const initialEnv = {
-  "parseInt": tfunc([tn("string"), un(tn("number"), tn("undefined"))], tn("number")),
+  parseInt: tfunc(
+    [tn("string"), un(tn("number"), tn("undefined"))],
+    tn("number"),
+  ),
 };
 
 function checkCode(code) {
-  let res = parse(code)
-  let ast = res.program.body
+  let res = parse(code);
+  let ast = res.program.body;
 
   let infAst = ast.map(babelExprToInfExpr);
 
-  let startCtx = { next: 0, env: initialEnv }
+  let startCtx = { next: 0, env: initialEnv };
   infAst.reduce((ctx, expr) => {
-    try {
-      let [_1, _2, ctx1] = infer(ctx, expr)
-      return ctx1;
-    } catch (e) {
-      throw e
-    }
-  }, startCtx)
+    let [_1, _2, ctx1] = infer(ctx, expr);
+    return ctx1;
+  }, startCtx);
 }
-
 
 let code = `
 123 === 123;
-`
+`;
 
 try {
-  checkCode(code)
+  checkCode(code);
 } catch (e) {
   console.log(e);
-  console.log(e.message)
-  console.log(e.loc)
+  console.log(e.message);
+  console.log(e.loc);
 }

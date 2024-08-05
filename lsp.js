@@ -1,87 +1,68 @@
-import { TextDocuments, createConnection, LogMessageNotification, DiagnosticSeverity } from "vscode-languageserver";
+import {
+  TextDocuments,
+  createConnection,
+  DiagnosticSeverity,
+  TextDocumentSyncKind,
+} from "vscode-languageserver";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
 
 import { checkCode } from "./parse";
 
+import { TypeInferenceError } from "./inference";
+
 const connection = createConnection();
 const documents = new TextDocuments(TextDocument);
 
 connection.onInitialize((params) => {
-    return ({
-        capabilities: {
-            textDocumentSync: documents.syncKind,
-            hoverProvider: true,
-        },
-    })
-})
+  return {
+    capabilities: {
+      textDocumentSync: TextDocumentSyncKind.Full,
+      hoverProvider: true,
+    },
+  };
+});
 
-documents.onDidOpen(change => {
-    let code = change.document.getText()
-
-    try {
-        checkCode(code)
-        connection.sendDiagnostics({
-            uri: change.document.uri,
-            diagnostics: []
-        })
-    } catch (e) {
-        if (e.loc) {
-        connection.sendDiagnostics({
-            uri: change.document.uri,
-            diagnostics:
-                [{
-                    severity: DiagnosticSeverity.Error,
-                    range: {
-                        start: {
-                            line: e.loc.start.line - 1,
-                            character: e.loc.start.column
-                        },
-                        end: {
-                            line: e.loc.end.line - 1,
-                            character: e.loc.end.column
-                        }
-                    },
-                    message: e.message
-                }]
-        })
-        }
+function checckAndSendDiagnostics(connection, change) {
+  let code = change.document.getText();
+  try {
+    checkCode(code);
+    connection.sendDiagnostics({
+      uri: change.document.uri,
+      diagnostics: [],
+    });
+  } catch (e) {
+    if (e instanceof TypeInferenceError) {
+      connection.sendDiagnostics({
+        uri: change.document.uri,
+        diagnostics: [
+          {
+            severity: DiagnosticSeverity.Error,
+            range: {
+              start: {
+                line: e.loc.start.line - 1,
+                character: e.loc.start.column,
+              },
+              end: {
+                line: e.loc.end.line - 1,
+                character: e.loc.end.column,
+              },
+            },
+            message: e.message,
+          },
+        ],
+      });
     }
-})
+  }
+}
 
-documents.onDidChangeContent(change => {
-    let code = change.document.getText()
+documents.onDidOpen((change) => {
+  checckAndSendDiagnostics(connection, change);
+});
 
-    try {
-        checkCode(code)
-        connection.sendDiagnostics({
-            uri: change.document.uri,
-            diagnostics: []
-        })
-    } catch (e) {
-        if (e.loc) {
-        connection.sendDiagnostics({
-            uri: change.document.uri,
-            diagnostics:
-                [{
-                    severity: DiagnosticSeverity.Error,
-                    range: {
-                        start: {
-                            line: e.loc.start.line - 1,
-                            character: e.loc.start.column
-                        },
-                        end: {
-                            line: e.loc.end.line - 1,
-                            character: e.loc.end.column
-                        }
-                    },
-                    message: e.message
-                }]
-        })
-        }
-    }}
-)
+documents.onDidChangeContent((change) => {
+  checckAndSendDiagnostics(connection, change);
+});
 
-documents.listen(connection)
-connection.listen()
-
+documents.listen(connection);
+connection.listen();
