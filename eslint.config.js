@@ -6,5 +6,5 @@ export default [
   { languageOptions: { globals: globals.browser } },
   pluginJs.configs.recommended,
   eslintConfigPrettier,
-  { "rules": { "no-unused-vars": "off" } },
+  { rules: { "no-unused-vars": "off" } },
 ];

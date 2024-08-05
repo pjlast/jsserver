@@ -203,9 +203,9 @@ export class TypeMismatchError extends Error {
   constructor(want, got) {
     super(
       "Type mismatch: expected " +
-      typeToString(want) +
-      ", got " +
-      typeToString(got),
+        typeToString(want) +
+        ", got " +
+        typeToString(got),
     );
     this.name = "TypeMismatchError";
     this.want = want;
