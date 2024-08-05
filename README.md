@@ -26,7 +26,7 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
 
 ## Assumptions
 
-JavaScript is dynamically types. So when applying static type analysis, we need to add some self-imposed constraints.
+JavaScript is dynamically typed. So when applying static type analysis, we need to add some self-imposed constraints.
 
 ### Variables cannot change type once declared
 
