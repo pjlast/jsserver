@@ -1,5 +1,5 @@
 {
-  "name": "jsinference",
+  "name": "jsserver",
   "module": "index.js",
   "type": "module",
   "devDependencies": {
